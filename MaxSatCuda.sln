@@ -5,10 +5,22 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MaxSatCuda", "MaxSatCuda\MaxSatCuda.vcxproj", "{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "sortingNetworkNvidia", "sortingNetworkNvidia", "{82F6B67A-EAAC-41FD-A63A-228E80567DF2}"
+	ProjectSection(SolutionItems) = preProject
+		MaxSatCuda\sortingNetworksNvidia\bitonicSort.cu = MaxSatCuda\sortingNetworksNvidia\bitonicSort.cu
+		MaxSatCuda\sortingNetworksNvidia\helper_cuda.h = MaxSatCuda\sortingNetworksNvidia\helper_cuda.h
+		MaxSatCuda\sortingNetworksNvidia\helper_timer.h = MaxSatCuda\sortingNetworksNvidia\helper_timer.h
+		MaxSatCuda\sortingNetworksNvidia\sortingNetworks_common.cuh = MaxSatCuda\sortingNetworksNvidia\sortingNetworks_common.cuh
+		MaxSatCuda\sortingNetworksNvidia\sortingNetworks_common.h = MaxSatCuda\sortingNetworksNvidia\sortingNetworks_common.h
+		MaxSatCuda\sortingNetworksNvidia\sortingNetworks_validate.cpp = MaxSatCuda\sortingNetworksNvidia\sortingNetworks_validate.cpp
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
+		Debug-non-dynamic|x64 = Debug-non-dynamic|x64
+		Debug-non-dynamic|x86 = Debug-non-dynamic|x86
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
@@ -17,6 +29,10 @@ Global
 		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug|x64.Build.0 = Debug|x64
 		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug|x86.ActiveCfg = Debug|Win32
 		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug|x86.Build.0 = Debug|Win32
+		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug-non-dynamic|x64.ActiveCfg = Debug-non-dynamic|x64
+		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug-non-dynamic|x64.Build.0 = Debug-non-dynamic|x64
+		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug-non-dynamic|x86.ActiveCfg = Debug-non-dynamic|Win32
+		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Debug-non-dynamic|x86.Build.0 = Debug-non-dynamic|Win32
 		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Release|x64.ActiveCfg = Release|x64
 		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Release|x64.Build.0 = Release|x64
 		{E554FEBD-05FF-49CF-8C4A-B297B2B74A5A}.Release|x86.ActiveCfg = Release|Win32
