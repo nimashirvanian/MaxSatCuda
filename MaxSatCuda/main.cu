@@ -12,6 +12,8 @@
 #include <iostream>
 #include <math.h>
 #include <vector>
+#include <iomanip>
+#include <fstream>
 
 #include "MaxSatStructures.h"
 #include "MaxSatSolvers.h"
@@ -37,9 +39,16 @@ int main()
 	//sumOrCountFanTest();
 	//classInCudaTest();
 	//sortTest();
+	srand(time(NULL));
 	cudaDeviceReset();
 	int nbvars, nbclauses;
-	cin >> nbvars >> nbclauses;
+	ifstream inFile;
+	inFile.open("in.txt");
+	if (!inFile) {
+		cout << "Unable to open file";
+		exit(1); // terminate with error
+	}
+	inFile >> nbvars >> nbclauses;
 	nbvars++;
 	Cnf* cnf;
 	cudaMallocManaged(&cnf, sizeof(Cnf));
@@ -47,20 +56,30 @@ int main()
 	while (nbclauses--) {
 		int tempvar;
 		Clause *tmpcls = new Clause();
-		cin >> tempvar;
+		inFile >> tempvar;
 		while (tempvar) {
 			int id = abs(tempvar);
 			bool sgn = tempvar > 0;
 			tmpcls->addLiteral(id, sgn);
-			cin >> tempvar;
+			inFile >> tempvar;
 		}
 		cnf->addClause(*tmpcls);
 	}
 
-	//SatSolver *solver = new CudaSingleStepSASatSolver(nbvars, cnf);
-	SatSolver *solver = new GreedySatSolver(nbvars, cnf);
+	cnf->cudable();
+	SatSolver *solver = new CudaMultiStepTabuSatSolver(nbvars, cnf);
+	//SatSolver *solver = new GreedySatSolver(nbvars, cnf);
 	
+	auto start = chrono::steady_clock::now();
+	//  Insert the code that will be timed
+
 	solver->solve();
+
+	auto end = chrono::steady_clock::now();
+	// Store the time difference between start and end
+	auto diff = end - start;
+	cout << endl<<chrono::duration <double, milli>(diff).count() << " ms" << endl;
+
 	cudaDeviceReset();
     return 0;
 }

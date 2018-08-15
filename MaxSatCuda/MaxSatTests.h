@@ -225,4 +225,21 @@ void sortTest() {
 	cudaFree(sindexes);
 }
 
+void performanceTest() {
+	int* test;
+	cudaMallocManaged(&test, 2000 * sizeof(int));
+	for (int i = 0; i < 2000; i++)
+		test[i] = 1;
+	auto start = chrono::steady_clock::now();
+	//  Insert the code that will be timed
+	testKernel << <12, 32 >> > (test);
+	cudaDeviceSynchronize();
+	auto end = chrono::steady_clock::now();
+	// Store the time difference between start and end
+	auto diff = end - start;
+	cout << endl << chrono::duration <double, milli>(diff).count() << " ms" << endl;
+
+	cudaFree(test);
+}
+
 #endif

@@ -187,6 +187,7 @@ public:
 	int sizelog;
 
 	SatState(Cnf* c, int nbvars) {
+
 		assignment.resize(nbvars);
 		//clause_stats.resize(c.getSize());
 		cnf = c;
@@ -198,14 +199,16 @@ public:
 
 	void cudable() {
 		cudaMallocManaged(&cu_assignment, L(assignment) * sizeof(bool));
-		cnf->cudable();
 	}
 
 	void randAssign() {
-		srand(time(NULL));
+		//bool test = assignment[0];
+		//assignment[1] = false;
 		for (int i = 0; i < L(assignment); i++) {
-			assignment[i] = (rand() % 2 == 0);
+			int temp = rand() ;
+			assignment[i] = (temp % 2 == 0);	
 		}
+	
 		//also may set clause_stats
 		//score = cnf.eval(assignment, clause_stats);
 		score = cnf->eval(assignment);
