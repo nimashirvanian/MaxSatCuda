@@ -12,8 +12,7 @@
 #include <iostream>
 #include <math.h>
 #include <vector>
-#include <iomanip>
-#include <fstream>
+
 
 #include "MaxSatStructures.h"
 #include "MaxSatSolvers.h"
@@ -33,6 +32,7 @@ typedef vector<int> vi;
 #define Trace(X) cerr << #X << " = " << X << endl
 #define _ << " _ " << 
 
+const vector<string> SatSolver::solvers_list = { "GreedySatSolver", "GreedyDeepSatSolver", "CudaGreedyDeepSatSolver" };
 
 int main()
 {
@@ -65,20 +65,28 @@ int main()
 		}
 		cnf->addClause(*tmpcls);
 	}
+	inFile.close();
 
 	cnf->cudable();
-	SatSolver *solver = new CudaMultiStepTabuSatSolver(nbvars, cnf);
-	//SatSolver *solver = new GreedySatSolver(nbvars, cnf);
-	
-	auto start = chrono::steady_clock::now();
-	//  Insert the code that will be timed
 
-	solver->solve();
+//for(auto &type : SatSolver::solvers_list)
+		//for (int i = 11; i <=20 ; i++) {
+			//string type = "CudaGreedyDeepSatSolver";
+		//	cout << endl << "------------ " << type << "---" << i << endl;
+			//SatSolver *solver = SatSolver::factory(type,nbvars, cnf);
+			SatSolver *solver = new CudaDeepSingleStepTabuSatSolver(nbvars, cnf);
+		//	Recorder *recorder = new Recorder(solver->getName(), "1", "collective1", to_string(i), 150);
+		//	solver->setRecorder(recorder);
+			//auto start = chrono::steady_clock::now();
+			//  Insert the code that will be timed
+		//	recorder->start();
+			solver->solve();
+		//}
 
-	auto end = chrono::steady_clock::now();
+	//auto end = chrono::steady_clock::now();
 	// Store the time difference between start and end
-	auto diff = end - start;
-	cout << endl<<chrono::duration <double, milli>(diff).count() << " ms" << endl;
+	//auto diff = end - start;
+	//cout << endl<<chrono::duration <double, milli>(diff).count() << " ms" << endl;
 
 	cudaDeviceReset();
     return 0;
