@@ -21,8 +21,8 @@
 inline int randomRangeUniform(int max) {
 	return (int)(((double)rand() / RAND_MAX)*(max-1));
 }
-
-__global__ void sumOrCountKernel(int* results, int* sum, int n, int log, bool count_positives)
+				
+__global__ void sumOrCountPositivesKernel(int* results, int* sum, int n, int log, bool count_positives)
 {
 	extern __shared__ int shared[];
 	int* share_results = &shared[0];
@@ -165,7 +165,7 @@ __global__ void tabuMaxKernel(int* results, int* maxindex,int* history,int step_
 	}
 }
 
-__global__ void RandomPickKernel(int* results, int* picked_index, int n, int log, bool elligible_sign)
+__global__ void randomPositivePickKernel(int* results, int* picked_index, int n, int log, curandState* rand)
 {
 	extern __shared__ int shared[];
 	int* share_results = &shared[0];
@@ -177,6 +177,7 @@ __global__ void RandomPickKernel(int* results, int* picked_index, int n, int log
 	int offset = 1 << (log - 1);
 	int subIndex = 0;
 	int tempind = 0;
+	int p;
 	for (int i = 0; i < (n / bd) + 1; i++) {
 		tempind = i*bd + threadIdx.x;
 		if (tempind < n) {
@@ -187,14 +188,15 @@ __global__ void RandomPickKernel(int* results, int* picked_index, int n, int log
 	__syncthreads();
 	for (int i = log; i > 0; i--) {
 		for (int j = 0; j*bd <= offset; j++)
-		{
+		{	
 			subIndex = offset + j*bd + ti;
 			if (subIndex < maxti) {
-				if (subIndex * 2 < n && share_results[subIndex * 2] > share_results[subIndex]) {
+				p = curand(&rand[ti]) % 2;
+				if (subIndex * 2 < n && (share_results[subIndex] < 0 || (share_results[subIndex * 2] >= 0 && p) )) {
 					share_results[subIndex] = share_results[subIndex * 2];
 					share_indexes[subIndex] = share_indexes[subIndex * 2];
 				}
-				if (subIndex * 2 + 1 < n && share_results[subIndex * 2 + 1] > share_results[subIndex]) {
+				if (subIndex * 2 + 1 < n && (share_results[subIndex] < 0 || (share_results[subIndex * 2 + 1] >= 0 && p) )) {
 					share_results[subIndex] = share_results[subIndex * 2 + 1];
 					share_indexes[subIndex] = share_indexes[subIndex * 2 + 1];
 				}
@@ -298,18 +300,17 @@ __global__ void twoStepKernel(SatState* state, int **results, int* results_index
 	results[0][index] = parent + res - prev;
 }
 
-__global__ void randIntitKernel(curandState* state, int size) {
+__global__ void randIntitKernel(curandState* state, int size,int seed) {
 	int ind = blockDim.x * blockIdx.x + threadIdx.x;
 	if (ind < size) {
-		curand_init(112, ind, 0, &state[ind]);
+		curand_init(seed, ind, 0, &state[ind]);
 		//printf("%d\n", ind);
 	}
 }
 
-__global__ void SAkernel(SatState *state, curandState* rand, int* result, bool** assignment) {
+__global__ void SAkernel(SatState *state, curandState* rand, int* result, bool** assignment,int max_temperature) {
 	//	extern __shared__ bool assignment[];
 	int ind = blockDim.x*blockIdx.x + threadIdx.x;
-	printf("%d\n", ind);
 	int size = state->size;
 	for (int i = 0; i < size; i++)
 		assignment[ind][i] = state->cu_assignment[i];
@@ -318,13 +319,13 @@ __global__ void SAkernel(SatState *state, curandState* rand, int* result, bool**
 	int eval = 0;
 	int maxeval = 0;
 	int toggle_index = 0;
-	int temperature = 5000;
-	int counter = 0;
-	while (temperature > 100) {
-		temperature -= 1;
-		counter = 0;
+	int temperature = max_temperature/2;
+	//int counter = 0;
+	while (temperature > 10) {
+		temperature --;
+		//counter = 0;
 		while (1) {
-			counter++;
+			//counter++;
 			toggle_index = (curand(&rand[ind]) % (size - 1)) + 1;
 			int prev = 0;
 			int res = 0;
@@ -338,7 +339,7 @@ __global__ void SAkernel(SatState *state, curandState* rand, int* result, bool**
 				res += (state->cnf->cu_clauses[state->cnf->cu_vars_cind[toggle_index][i]].iToggleEval(assignment[ind], toggle_index, -1));
 			}
 			eval = res - prev;
-			if (eval >= 0 || curand(&rand[ind]) % 20000 < temperature || counter > size / 2) {
+			if (eval >= 0 || curand(&rand[ind]) % max_temperature < temperature) {
 				assignment[ind][toggle_index] = !assignment[ind][toggle_index];
 				current += eval;
 				break;
@@ -352,20 +353,19 @@ __global__ void SAkernel(SatState *state, curandState* rand, int* result, bool**
 	result[ind] = best;
 }
 
-__global__ void Tabukernel(SatState **states, int** results,int* results_index,int** histories,int tabu_tenur,int size,int sizelog) {
+__global__ void Tabukernel(SatState **states, int** results,int* results_index,int** histories,int tabu_tenur,int size,int sizelog, int max_step) {
 	int ind = blockDim.x*blockIdx.x + threadIdx.x;
 	//printf("%d\n", ind);
-	int current = states[ind]->score;
-	int best = current;
+	int best = 0;
 	int maxeval = 0;
 	int maxind = 0;
 	int step_count = 0;
-	while (step_count<500) {
+	while (step_count<max_step) {
 		step_count++;
 
 		oneStepKernel <<< 1, size >>>(states[ind], results[ind], -1);
 		cudaDeviceSynchronize();
-		tabuMaxKernel << <1, 32, (2 * size * sizeof(int)) >> >(results[ind], &results_index[ind], histories[ind], step_count, tabu_tenur, (best - current + 1), size, sizelog);
+		tabuMaxKernel << <1, 32, (2 * size * sizeof(int)) >> >(results[ind], &results_index[ind], histories[ind], step_count, tabu_tenur, (best - states[ind]->score + 1), size, sizelog);
 		cudaDeviceSynchronize();
 		maxeval = results[ind][0];
 		maxind = results_index[ind];
@@ -373,10 +373,9 @@ __global__ void Tabukernel(SatState **states, int** results,int* results_index,i
 		states[ind]->cu_assignment[maxind] = !states[ind]->cu_assignment[maxind];
 		histories[ind][maxind] = step_count;
 		states[ind]->score += maxeval;
-		current = states[ind]->score;
-		if (best < current) {
+		if (best < states[ind]->score) {
 			//cout << "upgrade! :" << current << endl;
-			best = current;
+			best = states[ind]->score;
 		}
 		
 	}
@@ -417,6 +416,7 @@ public: Recorder(string solver, string benchmark, string collective_file, string
 	this->run = run;
 	this->timeout = timeout;
 	this->optimal = optimal;
+	last_upgrade_time = chrono::steady_clock::now();
 	start_time = chrono::steady_clock::now();
 }
 		void start() {
@@ -434,6 +434,10 @@ public: Recorder(string solver, string benchmark, string collective_file, string
 
 		void finalRec(int score,int step, int iteration = 1) {
 			collective_result_records << solver << "," << benchmark << "," << run << "," << score << "," << chrono::duration <double, milli>(last_upgrade_time - start_time).count() << "," <<step<<","<<iteration << endl;
+		}
+
+		void finalRecforMultistep(int score, int step,  int iteration = 1) {
+			collective_result_records << solver << "," << benchmark << "," << run << "," << score << "," << chrono::duration <double, milli>(chrono::steady_clock::now() - start_time).count() << "," << step << "," << iteration << endl;
 		}
 
 		~Recorder() {

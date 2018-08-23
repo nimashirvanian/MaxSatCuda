@@ -32,7 +32,7 @@ typedef vector<int> vi;
 #define Trace(X) cerr << #X << " = " << X << endl
 #define _ << " _ " << 
 
-const vector<string> SatSolver::solvers_list = { "GreedySatSolver", "GreedyDeepSatSolver", "CudaGreedyDeepSatSolver" };
+const vector<string> SatSolver::solvers_list = { "GreedySatSolver", "GreedyDeepSatSolver", "CudaGreedyDeepSatSolver", "TabuSatSolver", "CudaSingleStepTabuSatSolver", "CudaDeepSingleStepTabuSatSolver","CudaMultiStepTabuSatSolver", "SASatSolver","CudaSingleStepSSASatSolver", "CudaMultiStepSASatSolver" };
 
 int main()
 {
@@ -43,7 +43,7 @@ int main()
 	cudaDeviceReset();
 	int nbvars, nbclauses;
 	ifstream inFile;
-	inFile.open("in.txt");
+	inFile.open("4-s3v110c1000-2-random-973.cnf");
 	if (!inFile) {
 		cout << "Unable to open file";
 		exit(1); // terminate with error
@@ -69,24 +69,18 @@ int main()
 
 	cnf->cudable();
 
-//for(auto &type : SatSolver::solvers_list)
-		//for (int i = 11; i <=20 ; i++) {
+	for(int s=7; s < SatSolver::solvers_list.size(); s++)
+		for (int i = 1; i <=1 ; i++) {
 			//string type = "CudaGreedyDeepSatSolver";
-		//	cout << endl << "------------ " << type << "---" << i << endl;
-			//SatSolver *solver = SatSolver::factory(type,nbvars, cnf);
-			SatSolver *solver = new CudaDeepSingleStepTabuSatSolver(nbvars, cnf);
-		//	Recorder *recorder = new Recorder(solver->getName(), "1", "collective1", to_string(i), 150);
-		//	solver->setRecorder(recorder);
-			//auto start = chrono::steady_clock::now();
-			//  Insert the code that will be timed
-		//	recorder->start();
+			cout << endl << "------------ " << SatSolver::solvers_list[s] << "---" << i << endl;
+			SatSolver *solver = SatSolver::factory(SatSolver::solvers_list[s],nbvars, cnf);
+			//SatSolver *solver = new CudaMultiStepTabuSatSolver(nbvars, cnf);
+			Recorder *recorder = new Recorder(solver->getName(), "4", "SAtest", to_string(i), 150, 973);
+			solver->setRecorder(recorder);
+			recorder->start();
 			solver->solve();
-		//}
+		}
 
-	//auto end = chrono::steady_clock::now();
-	// Store the time difference between start and end
-	//auto diff = end - start;
-	//cout << endl<<chrono::duration <double, milli>(diff).count() << " ms" << endl;
 
 	cudaDeviceReset();
     return 0;

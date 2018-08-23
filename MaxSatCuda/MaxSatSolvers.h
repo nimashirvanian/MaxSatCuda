@@ -49,6 +49,7 @@ public:
 	static SatSolver* factory(string type, int nbvars, Cnf* cnf);
 
 	virtual int solve() { return 0; }
+
 	virtual string getName() { return "unidetified"; }
 
 	void setRecorder(Recorder* recorder) {
@@ -84,10 +85,15 @@ public:
 		bool ret = false;
 		if (recorder != NULL)
 			ret = recorder->timeOut() || best==recorder->optimal;
-		ret = ret || step > max_step;
+		ret = ret || step == max_step;
 		if (ret && recorder != NULL)
 			recorder->finalRec(best,step,iteration);
 		return ret;
+	}
+
+	void multiStepStop() {
+		if (recorder != NULL)
+			recorder->finalRecforMultistep(best, step);
 	}
 
 };
@@ -132,6 +138,30 @@ public:
 	}
 };
 
+class SASolver {
+protected:
+	int temperature;
+	int max_temperature;
+public:
+	SASolver(int nbvars) {
+		this->temperature = log2(nbvars)*log2(nbvars)*1000;
+		this->max_temperature = temperature*2;
+	}
+
+	void coolDown() {
+		temperature--;
+	}
+
+	float getP(int delta =1) {
+		return temperature / (float)max_temperature;
+	}
+
+	bool booleanByProbability (float p){
+		return randomRangeUniform(100000) < (int)(p * 100000);
+	}
+
+};
+
 
 
 //concretes
@@ -141,30 +171,27 @@ class TabuSatSolver : public SatSolver , public TabuSolver{
 public:
 
 	TabuSatSolver(int nbvars, Cnf* c) :SatSolver(nbvars, c) , TabuSolver(nbvars,1){
-
+		//setMaxStep(log2(nbvars) * 2000);
+		setMaxStep(-1);
 	}
 
 	int solve() {
 		
-		//state->randAssign();
-		int current = state->score;
-		int best = current;
 		int nbvars = state->size;
 		int nbvarlog = (int)(log2(nbvars));
-		int step_count = 0;
 		int * results = new int [nbvars]; 
 
-		while (best != 2141) {
-			int exceptional = best - current + 1;
+		while (!checkStop()) {
+			int exceptional = best - state->score + 1;
 			int maxeval = -INF;
 			int maxind = 0;
-			step_count++;
+			step++;
 
 			for (int i = 0; i < nbvars; i++)
 			{
 				results[i] = state->toggleAndScore(i);
 				state->toggle(i);
-				if (history[i] + tabu_tenur >= step_count && results[i] < exceptional)
+				if (history[i] + tabu_tenur >= step && results[i] < exceptional)
 					continue;
 				else
 				{
@@ -176,70 +203,52 @@ public:
 			}
 
 			state->toggle(maxind);
-			history[maxind] = step_count;
+			history[maxind] = step;
 			state->score += maxeval;
-			current = state->score;
-			if (best < current) {
-				cout << "upgrade! :" << current << endl;
-				best = current;
-			}
+			checkUpgrade();
 		}
 		
 		return best;
 	}
+
+	string getName() {
+		return "TabuSatSolver";
+	}
 	
 };
 
-class SASatSolver : public SatSolver {
+class SASatSolver : public SatSolver,public SASolver {
 
 public:
 
-	SASatSolver(int nbvars, Cnf* c) :SatSolver(nbvars, c) {
-
+	SASatSolver(int nbvars, Cnf* c) :SatSolver(nbvars, c), SASolver(nbvars) {
+		setMaxStep(temperature-1);
 	}
 
 	int solve() {
-		state->randAssign();
-		int current = state->score;
-		int best = 0;
-		cout << "start: " << current << endl;
 		int nbvar = L(state->assignment);
-		int temp = 10000;
-		int counter = 0;
-		srand(time(NULL));
-		while (1) {
-			counter++;
-			if (temp < 19950)
-				temp += 1;
-			cout << temp;
-			if (counter > 6000 && temp == 19950)
-			{
-				counter = 0;
-				temp = 15000;
-			}
-			int maxeval = 0;
-			int maxind = 0;
-			int i;
-			int counter = 0;
+		while (!checkStop() || true) {
+			step++;
+			int eval = 0;
+			int ind = 0;
 			while (1) {
-				counter++;
-				i = (rand() % nbvar);
-				int eval = state->toggleAndScore(i);
-				if (eval >= maxeval || rand() % 20000 > temp) {
-					maxind = i;
-					maxeval = eval;
+				ind = randomRangeUniform(nbvar);
+				eval = state->toggleAndScore(ind);
+				if (eval >= 0 || booleanByProbability(getP())) {
+					state->score += eval;
 					break;
 				}
-				state->toggle(i);
+				state->toggle(ind);
 			}
-
-			state->score += maxeval;
-			current = state->score;
-			if (best < current) {
-				cout << "upgrade! :" << current << endl;
-				best = current;
-			}
+			coolDown();
+			checkUpgrade();
+			if (step % 100 == 0 || temperature<100) cout << step << " " << temperature << endl;
 		}
+		return best;
+	}
+
+	string getName() {
+		return "SASatSolver";
 	}
 
 };
@@ -312,7 +321,7 @@ public:
 	}
 
 	string getName() {
-		return "DeepSatSolver";
+		return "GreedyDeepSatSolver";
 	}
 
 };
@@ -361,160 +370,8 @@ public:
 
 };
 
-class CudaGreedySatSolver : public SatSolver {
-public:
-	int** results;
-	int* results_index;
-	CudaGreedySatSolver(int nbvars, Cnf* c) : SatSolver() {
-		cudaMallocManaged(&state, sizeof(SatState));
-		new(state) SatState(c, nbvars);
-		cudaMallocManaged(&results, nbvars * sizeof(int*));
-		cudaMallocManaged(&results_index, nbvars * sizeof(int));
-		for (int i = 0; i < nbvars; i++) {
-			cudaMallocManaged(&results[i], nbvars * sizeof(int));
-		}
-	}
 
-	int solve() {
-		state->randAssign();
-		int current = state->score;
-		int best = 0;
-		int deep_temperature = 20000;
-		int main_temperature = 5000;
-
-		cout << "start: " << current << endl;
-		int nbvar = state->size;
-		int nbvarlog = (int)(log2(nbvar));
-		bool deep = false;
-		int lastdeep = 0;
-		while (1) {
-			int maxeval = 0;
-			int maxind = 0;
-			int maxindd = 0;
-			int parentval = 0;
-
-			if (rand() % 10000 < main_temperature) {
-				state->score += state->toggleAndScore(rand() % nbvar);
-				current = state->score;
-				main_temperature -= 2;
-			}
-			else {
-				if (deep) {
-					twoStepKernel << < this->state->size, 1 >> > (state, results, results_index);
-					cudaDeviceSynchronize();
-					maxKernel << <1, 500, (2 * nbvar * sizeof(int)) >> > (results[0], &results_index[0], nbvar, nbvarlog);
-					auto err = cudaGetLastError();
-					cudaDeviceSynchronize();
-					err = cudaGetLastError();
-					maxeval = results[0][0];
-					maxind = results_index[0];
-					maxindd = results_index[maxind];
-				}
-				else {
-					oneStepKernel << < 1, this->state->size >> > (state, results[0], -1);
-					cudaDeviceSynchronize();
-					maxKernel << <1, 500, (2 * nbvar * sizeof(int)) >> > (results[0], &results_index[0], nbvar, nbvarlog);
-					auto err = cudaGetLastError();
-					cudaDeviceSynchronize();
-					err = cudaGetLastError();
-					maxeval = results[0][0];
-					maxind = results_index[0];
-				}
-
-
-				//non parallel test
-				/*int tmaxeval = 0;
-				int tmaxind = 0;
-				int tmaxindd = 0;
-				int tparentval = 0;
-				int teval = 0;
-				for (int i = 1; i < nbvar; i++) {
-				if (deep) {
-				tparentval = state->toggleAndScore(i);
-				for (int j = 1; j < nbvar; j++) {
-				if (i == j) continue;
-				int teval = state->toggleAndScore(j);
-				if (teval + tparentval > tmaxeval) {
-				tmaxindd = j;
-				tmaxind = i;
-				tmaxeval = teval + tparentval;
-				}
-				state->toggle(j);
-				}
-				state->toggle(i);
-				}
-				else {
-				teval = state->toggleAndScore(i);
-				if (teval > tmaxeval) {
-				tmaxind = i;
-				tmaxeval = teval;
-				}
-				state->toggle(i);
-				}
-
-				}
-
-				if (tmaxeval != maxeval)
-				cout << "failed!" << endl;*/
-				//end of test
-
-				if (maxeval > 0) {
-					if (deep) {
-						cout << "found by deep";
-						deep = false;
-						state->toggle(maxindd);
-					}
-					state->toggle(maxind);
-					state->score += maxeval;
-					int eval_test = state->eval();
-					current = state->score;
-					//if (current != eval_test)
-					//cout << "failed score!" << endl;
-					cout << current << endl;
-				}
-				else {
-					if (!deep) {
-						if (rand() % 20000 < deep_temperature) {
-							state->score += state->toggleAndScore(rand() % nbvar);
-							current = state->score;
-							deep_temperature -= 1;
-						}
-						else
-							deep = true;
-						//lastdeep = current;
-					}
-					else {
-						if (rand() % 20000 < deep_temperature) {
-							deep = false;
-							state->toggle(maxindd);
-							state->toggle(maxind);
-							state->score += maxeval;
-							deep_temperature -= 1;
-						}
-						else {
-							cout << "reset on: " << best << " temps: " << main_temperature << " - " << deep_temperature << endl;
-							if (best < current) {
-								cout << "upgrade! :" << current << endl;
-								best = current;
-							}
-							state->randAssign();
-							current = state->score;
-							deep = false;
-							main_temperature = 5000;
-							deep_temperature = 20000;
-							cin.get();
-						}
-					}
-				}
-			}//main rand
-			if (best < current)
-				best = current;
-		}
-	}
-
-};
-
-class CudaMultiStepSASatSolver : public SatSolver {
+class CudaMultiStepSASatSolver : public SatSolver, public SASolver {
 public:
 	int* results;
 	int* results_index;
@@ -522,10 +379,10 @@ public:
 	curandState *d_state;
 	int parallel;
 
-	CudaMultiStepSASatSolver(int nbvars, Cnf* cnf, int parallel) : SatSolver() {
+	CudaMultiStepSASatSolver(int nbvars, Cnf* cnf, int parallel=96) : SatSolver(), SASolver(nbvars) {
 		this->parallel = parallel;
 		cudaMalloc(&d_state, parallel * sizeof(curandState));
-		randIntitKernel << <(parallel / 32) + 1, 32 >> > (d_state, parallel);
+		randIntitKernel << <(parallel / 32), 32 >> > (d_state, parallel, rand()%100);
 		auto err = cudaGetLastError();
 		cudaDeviceSynchronize();
 		err = cudaGetLastError();
@@ -544,7 +401,7 @@ public:
 		state->randAssign();
 		int nbvar = state->size;
 		int nbvarlog = (int)(log2(nbvar));
-		SAkernel <<<parallel, 1 >>> (state, d_state, results, assignments);
+		SAkernel <<<parallel, 1 >>> (state, d_state, results, assignments,max_temperature);
 		auto err = cudaGetLastError();
 		cudaDeviceSynchronize();
 		maxKernel << <1, 500, (2 * parallel * sizeof(int)) >> > (results, &results_index[0], parallel, (int)(log2(parallel)));
@@ -552,92 +409,85 @@ public:
 		cudaDeviceSynchronize();
 		err = cudaGetLastError();
 		cout << endl << endl << "Done ! best was : " << results[0];
+		step = max_temperature/2;
+		cout << "best was :" << best << endl;
+		multiStepStop();
 		return results[0];
+	}
+
+	string getName() {
+		return "CudaMultiStepSASatSolver";
 	}
 
 };
 
-class CudaSingleStepSASatSolver : public SatSolver {
+class CudaSingleStepSSASatSolver : public SatSolver, public SASolver {
 public:
 	int* results;
 	int* results_index;
-	int* tabu_history;
-	int tabu_step;
-	bool tabu;
-	CudaSingleStepSASatSolver(int nbvars, Cnf* c, bool tabu) : SatSolver() {
+	curandState *d_state;
+	CudaSingleStepSSASatSolver(int nbvars, Cnf* c) : SatSolver(), SASolver(nbvars) {
+		cudaMalloc(&d_state, nbvars * sizeof(curandState));
+		randIntitKernel << <1 , nbvars >> > (d_state, nbvars,rand()%100);
+		auto err = cudaGetLastError();
+		cudaDeviceSynchronize();
 		cudaMallocManaged(&state, sizeof(SatState));
 		new(state) SatState(c, nbvars);
 		cudaMallocManaged(&results, nbvars * sizeof(int));
 		cudaMallocManaged(&results_index, nbvars * sizeof(int));
-		this->tabu = tabu;
-		if (tabu) {
-			tabu_step = (int)(log2(nbvars));
-			cudaMallocManaged(&tabu_history, nbvars * sizeof(int));
-			for (int i = 0; i < nbvars; i++) {
-				tabu_history[i] = -tabu_step;
-			}
-		}
+		setMaxStep(temperature);
 	}
 
 	int solve() {
-		srand(time(NULL));
-		state->randAssign();
-		bool cuda = false;
 		int nbvar = state->size;
 		int nbvarlog = (int)(log2(nbvar));
-		int maxeval = -100000;
-		int maxind = -1;
-		int best = 0;
-		int counter = 0;
-		int temperature = 4000;
-		const int max_temperature = 8000;
+		int eval = -INF;
+		int ind = -1;
 		int *number_of_positives;
 		cudaMallocManaged(&number_of_positives, sizeof(int));
+		*number_of_positives = nbvar;
 		float SA_randomwalk_probability;
 		float SA_current_probability;
-		while (temperature > 0) {
-			counter++;
-			if (temperature < 2000) {
+		while (!checkStop()) {
+			if (*number_of_positives < nbvarlog) {
 				//cout << temperature << " ";
-				if (!cuda) cout << "------------"<< cuda++ << endl;
 				oneStepKernel << < 1, nbvar >> > (state, results, -1);
 				cudaDeviceSynchronize();
-				/*if (tabu) {
-					tabuMaxKernel << <1, 500, (2 * nbvar * sizeof(int)) >> > (results, results_index,tabu_history, counter, tabu_step,(best-state->score), nbvar, nbvarlog);
-				}
-				else {
-					maxKernel << <1, 500, (2 * nbvar * sizeof(int)) >> > (results, results_index, nbvar, nbvarlog);
-				}*/
+				randomPositivePickKernel << <1, 128, (2 * nbvar * sizeof(int)) >> > (results, results_index, nbvar, nbvarlog,d_state);
 				auto err = cudaGetLastError();
 				cudaDeviceSynchronize();
-				maxeval = results[0];
-				maxind = results_index[0];
+				eval = results[0];
+				ind = results_index[0];
 				err = cudaGetLastError();
-				sumOrCountKernel << <1, 200, (nbvar * sizeof(int)) >> > (results, number_of_positives, nbvar, nbvarlog, true);
+				sumOrCountPositivesKernel << <1, 128, (nbvar * sizeof(int)) >> > (results, number_of_positives, nbvar, nbvarlog, true);
 				cudaDeviceSynchronize();
-				SA_current_probability = temperature < max_temperature/10000 ? 0.0001 : (temperature / (float)max_temperature);
+				SA_current_probability = getP();
 				float non_positive_ratio = (1 - ((float)*number_of_positives / nbvar));
 				SA_randomwalk_probability = (non_positive_ratio * SA_current_probability) / (1 - non_positive_ratio * (1 - SA_current_probability));
 				if (number_of_positives == 0)
-					SA_randomwalk_probability = 0;
-				if (randomRangeUniform(100000) < (int)(SA_randomwalk_probability * 100000)) {
-					maxind = randomRangeUniform(nbvar);
-					state->score += state->toggleAndScore(maxind);
+					SA_randomwalk_probability = 1;
+				if (booleanByProbability(SA_randomwalk_probability)) {
+					while (1) {
+						ind = randomRangeUniform(nbvar);
+						eval = state->toggleAndScore(ind);
+						if (eval <= 0) {
+							state->score += eval;
+							break;
+						}
+						state->toggle(ind);
+					}
 				}
 				else {
-					state->score += maxeval;
-					state->toggle(maxind);
+					state->score += eval;
+					state->toggle(ind);
 				}
-				/*if(tabu)
-					tabu_history[maxind] = counter;*/
 			}
 			else {
 				//cout << temperature;
 				while (1) {
 					int i = randomRangeUniform(nbvar);
 					int eval = state->toggleAndScore(i);
-					int rand_temp = randomRangeUniform(max_temperature);
-					if (eval > 0 || rand_temp < temperature + 1) {
+					if (eval > 0 || booleanByProbability(getP())) {
 						state->score += eval;
 						break;
 					}else
@@ -646,14 +496,15 @@ public:
 
 			}
 
-			if (best < state->score) {
-				cout << "upgrade! " << state->score << endl;
-				best = state->score;
-			}
-			temperature--;
+			checkUpgrade();
+			coolDown();
 		}
 		
 		return best;
+	}
+
+	string getName() {
+		return "CudaSingleStepSSASatSolver";
 	}
 
 };
@@ -742,7 +593,7 @@ public:
 	SatState** states;
 	int parallel;
 
-	CudaMultiStepTabuSatSolver(int nbvars, Cnf* cnf,int parallel = 128) : CudaSatSolver(nbvars, cnf), TabuSolver(nbvars,parallel) {
+	CudaMultiStepTabuSatSolver(int nbvars, Cnf* cnf,int parallel = 96) : CudaSatSolver(nbvars, cnf), TabuSolver(nbvars,parallel) {
 		cudaMallocManaged(&results, parallel * sizeof(int*));
 		cudaMallocManaged(&results_index, nbvars * sizeof(int));
 		for (int i = 0; i < parallel; i++) {
@@ -759,31 +610,31 @@ public:
 	}
 
 	int solve() {
-		//state->randAssign();
 		int nbvar = states[0]->size;
 		int nbvarlog = (int)(log2(nbvar));
-		int maxscore = 0;
 		int maxind = -1;
-
-		Tabukernel <<< parallel / 32, 32 >>> (states, results, results_index,  histories,  tabu_tenur, nbvar,  nbvarlog);
+		int max_step = 3*nbvar/4;//(log2(nbvar)) * nbvar/2;
+		Tabukernel <<< parallel / 16, 16 >>> (states, results, results_index,  histories,  tabu_tenur, nbvar,  nbvarlog, max_step);
 		auto err = cudaGetLastError();
 		cudaDeviceSynchronize();
 		err = cudaGetLastError();
 		for (int i = 0; i < parallel ; i++)
 		{
-			if (results[i][0] > maxscore)
+			if (results[i][0] > best)
 			{	
-				maxscore = results[i][0];
+				best = results[i][0];
 				maxind = i;
 			}
 		}
-
-		cout << "best was :" << maxscore << endl;
-
-		return maxscore;
+		step = max_step;
+		cout << "best was :" << best << endl;
+		multiStepStop();
+		return best;
 	}
 	
-
+	string getName() {
+		return "CudaMultiStepTabuSatSolver";
+	}
 };
 
 class CudaDeepSingleStepTabuSatSolver : public CudaSatSolver, public TabuSolver {
@@ -795,7 +646,8 @@ public:
 		cudaMallocManaged(&results_index, nbvars* sizeof(int));
 		for (int i = 0; i < nbvars; i++)
 			cudaMallocManaged(&results[i], nbvars * sizeof(int));
-		setMaxStep(sqrt(log2(nbvars)) * 1000);
+		//setMaxStep(sqrt(log2(nbvars)) * 5000);
+		setMaxStep(-1);
 	}
 
 //	CudaDeepSingleStepTabuSatSolver(int nbvars, Cnf* cnf, int tabu_tenur) : CudaSatSolver(nbvars, cnf), TabuSolver(nbvars, tabu_tenur, 1), CudaDeepSingleStepTabuSatSolver(nbvars, cnf){
@@ -850,10 +702,11 @@ public:
 		return best;
 	}
 
-
+	string getName() {
+		return "CudaDeepSingleStepTabuSatSolver";
+	}
 
 };
-
 
 class CudaSingleStepTabuSatSolver : public CudaSatSolver, public TabuSolver {
 	public:
@@ -862,7 +715,8 @@ class CudaSingleStepTabuSatSolver : public CudaSatSolver, public TabuSolver {
 		CudaSingleStepTabuSatSolver(int nbvars, Cnf* cnf) : CudaSatSolver(nbvars, cnf), TabuSolver(nbvars, 1) {
 			cudaMallocManaged(&results, nbvars * sizeof(int));
 			cudaMallocManaged(&results_index, sizeof(int));
-			setMaxStep((int)(log2(nbvars))*1000);
+			//setMaxStep((int)(log2(nbvars))*5000);
+			setMaxStep(-1);
 		}
 
 	//	CudaSingleStepTabuSatSolver(int nbvars, Cnf* cnf, int tabu_tenur) : CudaSatSolver(nbvars, cnf), TabuSolver(nbvars, tabu_tenur, 1) ,CudaSingleStepTabuSatSolver(nbvars, cnf){
@@ -895,7 +749,9 @@ class CudaSingleStepTabuSatSolver : public CudaSatSolver, public TabuSolver {
 			}
 			return best;
 		}
-
+		string getName() {
+			return "CudaSingleStepTabuSatSolver";
+		}
 
 };
 
@@ -906,6 +762,20 @@ SatSolver* SatSolver::factory(string type, int nbvars, Cnf* cnf) {
 		return new GreedyDeepSatSolver(nbvars, cnf);
 	else if (type == solvers_list[2])
 		return new CudaGreedyDeepSatSolver(nbvars, cnf);
+	else if (type == solvers_list[3])
+		return new TabuSatSolver(nbvars, cnf);
+	else if (type == solvers_list[4])
+		return new CudaSingleStepTabuSatSolver(nbvars, cnf);
+	else if (type == solvers_list[5])
+		return new CudaDeepSingleStepTabuSatSolver(nbvars, cnf);
+	else if (type == solvers_list[6])
+		return new CudaMultiStepTabuSatSolver(nbvars, cnf);
+	else if (type == solvers_list[7])
+		return new SASatSolver(nbvars, cnf);
+	else if (type == solvers_list[8])
+		return new CudaSingleStepSSASatSolver(nbvars, cnf);
+	else if (type == solvers_list[9])
+		return new CudaMultiStepSASatSolver(nbvars, cnf);
 	else
 		return NULL;
 }

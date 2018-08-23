@@ -119,7 +119,7 @@ void sumOrCountFanTest() {
 	for (int i = 0; i < size; i++) {
 		a[i] = i%2 ? i : -i;
 	}
-	sumOrCountKernel << <1, 200, (size * sizeof(int)) >> >(a, sum, size, slog,true);
+	sumOrCountPositivesKernel << <1, 200, (size * sizeof(int)) >> >(a, sum, size, slog,true);
 	err = cudaGetLastError();
 	if (err != cudaSuccess)
 	{
