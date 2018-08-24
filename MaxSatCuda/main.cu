@@ -69,13 +69,13 @@ int main()
 
 	cnf->cudable();
 
-	for(int s=7; s < SatSolver::solvers_list.size(); s++)
-		for (int i = 1; i <=1 ; i++) {
+	for(int s=7; s <9; /*SatSolver::solvers_list.size();*/ s++)
+		for (int i = 1; i <=20; i++) {
 			//string type = "CudaGreedyDeepSatSolver";
 			cout << endl << "------------ " << SatSolver::solvers_list[s] << "---" << i << endl;
 			SatSolver *solver = SatSolver::factory(SatSolver::solvers_list[s],nbvars, cnf);
 			//SatSolver *solver = new CudaMultiStepTabuSatSolver(nbvars, cnf);
-			Recorder *recorder = new Recorder(solver->getName(), "4", "SAtest", to_string(i), 150, 973);
+			Recorder *recorder = new Recorder(solver->getName(), "3", "SAcollective1-4", to_string(i), 150, 973);
 			solver->setRecorder(recorder);
 			recorder->start();
 			solver->solve();

@@ -192,11 +192,11 @@ __global__ void randomPositivePickKernel(int* results, int* picked_index, int n,
 			subIndex = offset + j*bd + ti;
 			if (subIndex < maxti) {
 				p = curand(&rand[ti]) % 2;
-				if (subIndex * 2 < n && (share_results[subIndex] < 0 || (share_results[subIndex * 2] >= 0 && p) )) {
+				if (subIndex * 2 < n && (share_results[subIndex] <= 0 || (share_results[subIndex * 2] > 0 && p==1) )) {
 					share_results[subIndex] = share_results[subIndex * 2];
 					share_indexes[subIndex] = share_indexes[subIndex * 2];
 				}
-				if (subIndex * 2 + 1 < n && (share_results[subIndex] < 0 || (share_results[subIndex * 2 + 1] >= 0 && p) )) {
+				if (subIndex * 2 + 1 < n && (share_results[subIndex] <= 0 || (share_results[subIndex * 2 + 1] > 0 && p==1) )) {
 					share_results[subIndex] = share_results[subIndex * 2 + 1];
 					share_indexes[subIndex] = share_indexes[subIndex * 2 + 1];
 				}
@@ -319,10 +319,10 @@ __global__ void SAkernel(SatState *state, curandState* rand, int* result, bool**
 	int eval = 0;
 	int maxeval = 0;
 	int toggle_index = 0;
-	int temperature = max_temperature/2;
+	int temperature = max_temperature;
 	//int counter = 0;
-	while (temperature > 10) {
-		temperature --;
+	while (temperature > 2) {
+		temperature--;
 		//counter = 0;
 		while (1) {
 			//counter++;

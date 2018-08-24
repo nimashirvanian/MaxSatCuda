@@ -39,7 +39,7 @@ public:
 		best = 0;
 		step = 0;
 		iteration = 1;
-		max_step = 50000;
+		max_step = 500000;
 		recorder = NULL;
 	}
 	SatSolver(int nbvars, Cnf* c):SatSolver() {
@@ -144,20 +144,20 @@ protected:
 	int max_temperature;
 public:
 	SASolver(int nbvars) {
-		this->temperature = log2(nbvars)*log2(nbvars)*1000;
-		this->max_temperature = temperature*2;
+		this->max_temperature = log2(nbvars)*log2(nbvars)*2800;
+		this->temperature = max_temperature/2;
 	}
 
 	void coolDown() {
 		temperature--;
 	}
 
-	float getP(int delta =1) {
-		return temperature / (float)max_temperature;
+	double getP(int delta =1) {
+		return (double)temperature / (double)max_temperature;
 	}
 
-	bool booleanByProbability (float p){
-		return randomRangeUniform(100000) < (int)(p * 100000);
+	bool booleanByProbability (double p){
+		return randomRangeUniform(1000000) < (int)(p * 1000000);
 	}
 
 };
@@ -222,19 +222,21 @@ class SASatSolver : public SatSolver,public SASolver {
 public:
 
 	SASatSolver(int nbvars, Cnf* c) :SatSolver(nbvars, c), SASolver(nbvars) {
-		setMaxStep(temperature-1);
+		setMaxStep(temperature-2);
 	}
 
 	int solve() {
 		int nbvar = L(state->assignment);
-		while (!checkStop() || true) {
+		while (!checkStop()) {
 			step++;
 			int eval = 0;
 			int ind = 0;
+			bool worsen;
 			while (1) {
 				ind = randomRangeUniform(nbvar);
 				eval = state->toggleAndScore(ind);
-				if (eval >= 0 || booleanByProbability(getP())) {
+				worsen = booleanByProbability(getP());
+				if (eval > 0 || worsen) {
 					state->score += eval;
 					break;
 				}
@@ -242,7 +244,6 @@ public:
 			}
 			coolDown();
 			checkUpgrade();
-			if (step % 100 == 0 || temperature<100) cout << step << " " << temperature << endl;
 		}
 		return best;
 	}
@@ -400,19 +401,21 @@ public:
 	int solve() {
 		state->randAssign();
 		int nbvar = state->size;
+		max_temperature = 40000;
 		int nbvarlog = (int)(log2(nbvar));
 		SAkernel <<<parallel, 1 >>> (state, d_state, results, assignments,max_temperature);
 		auto err = cudaGetLastError();
 		cudaDeviceSynchronize();
-		maxKernel << <1, 500, (2 * parallel * sizeof(int)) >> > (results, &results_index[0], parallel, (int)(log2(parallel)));
+		maxKernel << <1, 128, (2 * parallel * sizeof(int)) >> > (results, &results_index[0], parallel, (int)(log2(parallel)));
 		err = cudaGetLastError();
 		cudaDeviceSynchronize();
 		err = cudaGetLastError();
 		cout << endl << endl << "Done ! best was : " << results[0];
 		step = max_temperature/2;
+		best = results[0];
 		cout << "best was :" << best << endl;
 		multiStepStop();
-		return results[0];
+		return best;
 	}
 
 	string getName() {
@@ -435,7 +438,7 @@ public:
 		new(state) SatState(c, nbvars);
 		cudaMallocManaged(&results, nbvars * sizeof(int));
 		cudaMallocManaged(&results_index, nbvars * sizeof(int));
-		setMaxStep(temperature);
+		setMaxStep(temperature-1);
 	}
 
 	int solve() {
@@ -446,10 +449,11 @@ public:
 		int *number_of_positives;
 		cudaMallocManaged(&number_of_positives, sizeof(int));
 		*number_of_positives = nbvar;
-		float SA_randomwalk_probability;
-		float SA_current_probability;
+		double SA_randomwalk_probability;
+		double SA_current_probability;
 		while (!checkStop()) {
-			if (*number_of_positives < nbvarlog) {
+			step++;
+			if (temperature < max_temperature/100) {
 				//cout << temperature << " ";
 				oneStepKernel << < 1, nbvar >> > (state, results, -1);
 				cudaDeviceSynchronize();
@@ -462,10 +466,12 @@ public:
 				sumOrCountPositivesKernel << <1, 128, (nbvar * sizeof(int)) >> > (results, number_of_positives, nbvar, nbvarlog, true);
 				cudaDeviceSynchronize();
 				SA_current_probability = getP();
-				float non_positive_ratio = (1 - ((float)*number_of_positives / nbvar));
+				double non_positive_ratio = (1 - ((double)*number_of_positives / nbvar));
 				SA_randomwalk_probability = (non_positive_ratio * SA_current_probability) / (1 - non_positive_ratio * (1 - SA_current_probability));
 				if (number_of_positives == 0)
 					SA_randomwalk_probability = 1;
+				//if (temperature < 5000)
+				//	cout << temperature<<" ";
 				if (booleanByProbability(SA_randomwalk_probability)) {
 					while (1) {
 						ind = randomRangeUniform(nbvar);
@@ -483,7 +489,6 @@ public:
 				}
 			}
 			else {
-				//cout << temperature;
 				while (1) {
 					int i = randomRangeUniform(nbvar);
 					int eval = state->toggleAndScore(i);
@@ -537,8 +542,9 @@ public:
 			if (deep) {
 				twoStepKernel << < this->state->size, 1 >> >(state, results, results_index);
 				cudaDeviceSynchronize();
-				maxKernel << <1, 500, (2 * nbvar * sizeof(int)) >> >(results[0], &results_index[0], nbvar, nbvarlog);
 				auto err = cudaGetLastError();
+				maxKernel << <1, 128, (2 * nbvar * sizeof(int)) >> >(results[0], &results_index[0], nbvar, nbvarlog);
+				err = cudaGetLastError();
 				cudaDeviceSynchronize();
 				err = cudaGetLastError();
 				maxeval = results[0][0];
